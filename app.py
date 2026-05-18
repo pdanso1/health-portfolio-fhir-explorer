@@ -13,8 +13,6 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Optional
-
 import pandas as pd
 import streamlit as st
 
@@ -74,22 +72,6 @@ def load_sample_data() -> list[dict]:
     return load_all_bundles(SAMPLE_DIR)
 
 
-@st.cache_data
-def get_patient_names(bundles_tuple) -> list[str]:
-    """Return sorted patient names from the cached bundles."""
-    # Accept a tuple (hashable) but work with the underlying list
-    bundles = list(bundles_tuple)
-    patients_df = extract_patients(bundles)
-    names = sorted(patients_df["name"].dropna().tolist())
-    return names
-
-
-def _bundles_as_tuple(bundles: list[dict]):
-    """Convert bundle list to a hashable form for cache_data compatibility."""
-    # We cache using the filenames as a stable key
-    return tuple(b.get("_filename", "") for b in bundles)
-
-
 # ---------------------------------------------------------------------------
 # Helper: paginate a DataFrame
 # ---------------------------------------------------------------------------
@@ -139,7 +121,7 @@ def _paginate(df: pd.DataFrame, page_key: str) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 
-def _get_bundle_by_name(bundles: list[dict], name: str) -> Optional[dict]:
+def _get_bundle_by_name(bundles: list[dict], name: str) -> dict | None:
     """Return the bundle whose patient name matches *name* exactly."""
     for bundle in bundles:
         patient = extract_patient(bundle)
@@ -287,10 +269,9 @@ def _rb_hapi(resource_type: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _tab_patient_view(bundles: list[dict]) -> None:
+def _tab_patient_view(bundles: list[dict], patients_df: pd.DataFrame) -> None:
     st.subheader("Patient-Centric View")
 
-    patients_df = extract_patients(bundles)
     patient_names = sorted(patients_df["name"].dropna().tolist())
 
     selected_name = st.selectbox(
@@ -530,10 +511,9 @@ def _tab_query_builder() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _tab_relationship_diagram(bundles: list[dict]) -> None:
+def _tab_relationship_diagram(bundles: list[dict], patients_df: pd.DataFrame) -> None:
     st.subheader("Patient Resource Relationship Diagram")
 
-    patients_df = extract_patients(bundles)
     patient_names = sorted(patients_df["name"].dropna().tolist())
 
     selected_name = st.selectbox(
@@ -550,6 +530,12 @@ def _tab_relationship_diagram(bundles: list[dict]) -> None:
     if bundle is None:
         st.error("Could not load bundle for this patient.")
         return
+
+    # Compute resource DataFrames once — used for counts display below
+    conditions_df = extract_conditions(bundle)
+    observations_df = extract_observations(bundle)
+    medications_df = extract_medications(bundle)
+    encounters_df = extract_encounters(bundle)
 
     fig = build_patient_graph(bundle)
     st.plotly_chart(fig, use_container_width=True)
@@ -575,11 +561,6 @@ def _tab_relationship_diagram(bundles: list[dict]) -> None:
 
     # Resource counts summary
     st.markdown("#### Resource Counts")
-    conditions_df = extract_conditions(bundle)
-    observations_df = extract_observations(bundle)
-    medications_df = extract_medications(bundle)
-    encounters_df = extract_encounters(bundle)
-
     rc1, rc2, rc3, rc4 = st.columns(4)
     with rc1:
         st.metric("Conditions", len(conditions_df))
@@ -674,6 +655,9 @@ def main() -> None:
     # Load all SYNTHEA bundles once (cached)
     bundles = load_sample_data()
 
+    # Extract patients once and share across tabs that need the patient list
+    patients_df = extract_patients(bundles)
+
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📋 Resource Browser",
         "👤 Patient View",
@@ -686,13 +670,13 @@ def main() -> None:
         _tab_resource_browser(bundles)
 
     with tab2:
-        _tab_patient_view(bundles)
+        _tab_patient_view(bundles, patients_df)
 
     with tab3:
         _tab_query_builder()
 
     with tab4:
-        _tab_relationship_diagram(bundles)
+        _tab_relationship_diagram(bundles, patients_df)
 
     with tab5:
         _tab_fhir_concepts()
