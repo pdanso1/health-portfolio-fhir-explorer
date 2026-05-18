@@ -1,1 +1,4 @@
-# Placeholder for Python package dependencies
+streamlit>=1.32.0
+pandas>=2.0.0
+requests>=2.28.0
+plotly>=5.18.0
